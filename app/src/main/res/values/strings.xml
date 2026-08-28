@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Rebeka</string>
+    <string name="accessibility_service_description">
+        Отслеживает попытки открыть экран администраторов устройства или
+        удалить приложение, чтобы вовремя предупредить родителя.
+    </string>
+</resources>
