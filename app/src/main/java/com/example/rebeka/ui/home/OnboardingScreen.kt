@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Settings
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -60,7 +62,10 @@ fun OnboardingScreen(onAllGranted: () -> Unit) {
 
     val allDone = accessibilityDone && usageDone && adminDone && overlayDone && stepsPermissionDone
 
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
         Text("Настройка (выполняет родитель)", style = MaterialTheme.typography.headlineSmall)
         Text(
             "Без этих разрешений приложение не увидит ни шаги, ни экранное время — " +
@@ -110,8 +115,6 @@ fun OnboardingScreen(onAllGranted: () -> Unit) {
             }
         )
 
-        Spacer(Modifier.weight(1f))
-
         Button(onClick = onAllGranted, enabled = allDone, modifier = Modifier.fillMaxWidth()) {
             Text(if (allDone) "Готово" else "Осталось включить пункты выше")
         }
@@ -123,10 +126,15 @@ private fun PermissionStep(title: String, done: Boolean, onClick: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Row(
             Modifier.padding(16.dp).fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
-            Text(title)
-            if (done) Text("✓", color = MaterialTheme.colorScheme.primary) else TextButton(onClick = onClick) { Text("Открыть") }
+            Text(title, modifier = Modifier.weight(1f).padding(end = 8.dp))
+            if (done) {
+                Text("✓", color = MaterialTheme.colorScheme.primary)
+            } else {
+                TextButton(onClick = onClick) { Text("Открыть", maxLines = 1) }
+            }
         }
     }
 }
