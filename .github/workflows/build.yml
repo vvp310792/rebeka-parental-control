@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   build:
@@ -20,9 +21,31 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Debug build
-        run: ./gradlew assembleDebug --stacktrace
+        id: debug_build
+        run: ./gradlew assembleDebug --stacktrace 2>&1 | tee build_log.txt
+
+      - name: Publish failure log for debugging
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tail -c 60000 build_log.txt > build_log_tail.txt
+          BODY=$(python3 -c "
+import json
+with open('build_log_tail.txt') as f:
+    content = f.read()
+print(json.dumps({'body': '\`\`\`\n' + content + '\n\`\`\`'}))
+")
+          curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues" \
+            -d "{\"title\": \"CI build failure log ${{ github.run_id }}\", \"body\": \"see next comment\"}" > issue.json
+          ISSUE_NUM=$(python3 -c "import json;print(json.load(open('issue.json'))['number'])")
+          curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/$ISSUE_NUM/comments" \
+            -d "$BODY"
 
       - uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: debug-apk
           path: app/build/outputs/apk/debug/*.apk
