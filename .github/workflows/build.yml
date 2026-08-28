@@ -39,6 +39,20 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/issues" \
             -d @issue_payload.json
 
+      - name: Publish debug APK as a GitHub Release (direct download, no zip)
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
+          gh release delete latest-debug --yes --repo ${{ github.repository }} || true
+          git push origin :refs/tags/latest-debug || true
+          gh release create latest-debug "$APK_PATH" \
+            --repo ${{ github.repository }} \
+            --title "Debug APK (latest, ${{ github.sha }})" \
+            --notes "Автосборка с коммита ${{ github.sha }}" \
+            --target ${{ github.sha }}
+
       - uses: actions/upload-artifact@v4
         if: success()
         with:

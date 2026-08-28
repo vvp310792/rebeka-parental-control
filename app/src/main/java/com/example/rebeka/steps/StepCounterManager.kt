@@ -1,10 +1,13 @@
 package com.example.rebeka.steps
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import androidx.core.content.ContextCompat
 import com.example.rebeka.data.StatsRepository
 import java.time.LocalDate
 
@@ -16,14 +19,18 @@ import java.time.LocalDate
  * Требует ACTIVITY_RECOGNITION (Android 10+, runtime permission).
  */
 class StepCounterManager(
-    context: Context,
+    private val appContext: Context,
     private val repository: StatsRepository
 ) : SensorEventListener {
 
-    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private val sensorManager = appContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val stepSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
 
     fun start() {
+        val granted = ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACTIVITY_RECOGNITION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) return // BlockService перерегистрирует при следующем старте, когда разрешение выдано
+
         stepSensor?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
         }
