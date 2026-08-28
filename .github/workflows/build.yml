@@ -22,7 +22,9 @@ jobs:
 
       - name: Debug build
         id: debug_build
-        run: ./gradlew assembleDebug --stacktrace 2>&1 | tee build_log.txt
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee build_log.txt
 
       - name: Publish build log for debugging
         if: always()
@@ -31,7 +33,7 @@ jobs:
         run: |
           echo "--- find outputs ---" >> build_log.txt
           find app/build/outputs -type f >> build_log.txt 2>&1 || true
-          tail -c 60000 build_log.txt > build_log_tail.txt
+          { grep -n -B2 -A100 "FAILURE:" build_log.txt || true; echo "---TAIL---"; tail -c 20000 build_log.txt; } > build_log_tail.txt
           jq -n --rawfile content build_log_tail.txt '{title: "CI build log", body: ("```\n" + $content + "\n```")}' > issue_payload.json
           curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/issues" \
