@@ -124,6 +124,11 @@ fun HomeScreen(repository: StatsRepository) {
                 style = MaterialTheme.typography.bodySmall
             )
         }
+
+        Text(
+            "Версия ${com.example.rebeka.BuildConfig.VERSION_NAME} (${com.example.rebeka.BuildConfig.VERSION_CODE})",
+            style = MaterialTheme.typography.labelSmall
+        )
     }
 }
 
