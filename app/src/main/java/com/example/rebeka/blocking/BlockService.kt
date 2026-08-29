@@ -1,12 +1,15 @@
 package com.example.rebeka.blocking
 
 import android.app.Service
+import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import com.example.rebeka.RebekaApp
+import com.example.rebeka.admin.AdminUtils
 import com.example.rebeka.data.StatsRepository
 import com.example.rebeka.notifications.ParentAlertNotifier
 import com.example.rebeka.steps.StepCounterManager
@@ -118,7 +121,15 @@ class BlockService : Service() {
             // Accessibility-служба читает этот флаг, чтобы схлопывать шторку.
             BlockState.blocked = shouldBlock
 
-            if (shouldBlock && !overlay.isShowing) {
+            if (shouldBlock && !Settings.canDrawOverlays(this@BlockService)) {
+                // Разрешение «поверх других окон» отозвали — почти наверняка через
+                // системное уведомление об оверлее, которое Android показывает сам
+                // и которое приложение не может скрыть. Нарисовать окно уже нельзя,
+                // поэтому переходим к запасному варианту: блокируем экран через права
+                // администратора устройства. Телефон будет гаснуть при каждой проверке,
+                // пока разрешение не вернут или не снимут блокировку по PIN/шагам.
+                lockScreenViaDeviceAdmin()
+            } else if (shouldBlock && !overlay.isShowing) {
                 overlay.show(statusText) { pin, callback -> verifyPinAsync(pin, callback) }
             } else if (shouldBlock && overlay.isShowing) {
                 // Окно уже висит — обновляем счётчик шагов, чтобы ребёнок видел прогресс.
@@ -150,6 +161,23 @@ class BlockService : Service() {
                 withContext(Dispatchers.Main) { callback(false) }
             }
         }
+    }
+
+    private var lastOverlayRevokedAlert = 0L
+
+    private fun lockScreenViaDeviceAdmin() {
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        if (!dpm.isAdminActive(AdminUtils.adminComponent(this))) return
+
+        // Родителя предупреждаем, но не чаще раза в минуту, иначе при цикле в 5 секунд
+        // уведомления посыплются лавиной.
+        val now = System.currentTimeMillis()
+        if (now - lastOverlayRevokedAlert > 60_000) {
+            lastOverlayRevokedAlert = now
+            ParentAlertNotifier(this).notifyOverlayPermissionRevoked()
+        }
+
+        runCatching { dpm.lockNow() }
     }
 
     private fun formatDuration(millis: Long): String {

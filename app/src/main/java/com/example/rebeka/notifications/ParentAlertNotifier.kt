@@ -26,8 +26,7 @@ class ParentAlertNotifier(private val context: Context) {
         sendRemote("settings_screen_opened", mapOf("screen" to screenClassName))
     }
 
-    fun notifyAdminDisableAttempt() {
-        showLocal(
+    fun notifyAdminDisableAttempt() {        showLocal(
             id = 101,
             title = "Попытка отключить контроль",
             text = "Ребёнок пытается снять права администратора устройства"
@@ -42,6 +41,15 @@ class ParentAlertNotifier(private val context: Context) {
             text = "Права администратора устройства сняты"
         )
         sendRemote("admin_disabled", emptyMap())
+    }
+
+    fun notifyOverlayPermissionRevoked() {
+        showLocal(
+            id = 103,
+            title = "Отключён показ поверх окон",
+            text = "Блокировка переведена в режим гашения экрана"
+        )
+        sendRemote("overlay_permission_revoked", emptyMap())
     }
 
     private fun showLocal(id: Int, title: String, text: String) {

@@ -25,6 +25,19 @@ class BlockAccessibilityService : AccessibilityService() {
         "com.android.settings.applications.InstalledAppDetails"
     )
 
+    /**
+     * Экраны, с которых отзывают «поверх других окон». Android сам показывает
+     * уведомление об активном оверлее и не даёт его скрыть, поэтому единственное,
+     * что можно сделать — не пустить на сам экран отзыва, пока блокировка активна.
+     */
+    private val overlaySettingsClassNames = listOf(
+        "AppDrawOverlaySettings",
+        "DrawOverlayDetails",
+        "ManageApplications",
+        "AlertWindow",
+        "AppOpsDetails"
+    )
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString()
 
@@ -38,6 +51,18 @@ class BlockAccessibilityService : AccessibilityService() {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val className = event.className?.toString() ?: return
 
+        // Во время блокировки Настройки вообще не открыть: ребёнок идёт туда только
+        // чтобы отозвать разрешение или снять администратора.
+        if (BlockState.blocked && packageName == SETTINGS_PACKAGE) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            ParentAlertNotifier(this).notifySettingsScreenOpened(className)
+            return
+        }
+
+        if (overlaySettingsClassNames.any { className.contains(it, ignoreCase = true) }) {
+            ParentAlertNotifier(this).notifySettingsScreenOpened(className)
+        }
+
         if (watchedScreenClassNames.any { className.contains(it) }) {
             ParentAlertNotifier(this).notifySettingsScreenOpened(className)
         }
@@ -47,5 +72,6 @@ class BlockAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
+        private const val SETTINGS_PACKAGE = "com.android.settings"
     }
 }
