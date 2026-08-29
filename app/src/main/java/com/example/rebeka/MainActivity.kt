@@ -30,6 +30,7 @@ import com.example.rebeka.data.StatsRepository
 import com.example.rebeka.navigation.Routes
 import com.example.rebeka.ui.home.HomeScreen
 import com.example.rebeka.ui.home.OnboardingScreen
+import com.example.rebeka.ui.home.ParentSettingsScreen
 import com.example.rebeka.ui.home.PinSetupScreen
 import com.example.rebeka.usage.UsageStatsHelper
 
@@ -131,7 +132,12 @@ private fun RebekaNavHost(repository: StatsRepository) {
                 navController.navigate(next) { popUpTo(Routes.PIN_SETUP) { inclusive = true } }
             })
         }
-        composable(Routes.HOME) { HomeScreen(repository) }
+        composable(Routes.HOME) {
+            HomeScreen(repository, onOpenParentSettings = { navController.navigate(Routes.PARENT_SETTINGS) })
+        }
+        composable(Routes.PARENT_SETTINGS) {
+            ParentSettingsScreen(repository, onDone = { navController.popBackStack() })
+        }
         composable(Routes.ONBOARDING) {
             OnboardingScreen(onAllGranted = {
                 onboardingComplete = true

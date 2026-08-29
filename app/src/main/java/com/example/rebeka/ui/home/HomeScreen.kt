@@ -26,7 +26,7 @@ import kotlinx.coroutines.delay
  * пока экран открыт — не ждём 30-секундного тика сервиса.
  */
 @Composable
-fun HomeScreen(repository: StatsRepository) {
+fun HomeScreen(repository: StatsRepository, onOpenParentSettings: () -> Unit = {}) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val usageHelper = remember { UsageStatsHelper(context) }
@@ -144,6 +144,10 @@ fun HomeScreen(repository: StatsRepository) {
                     "Окно появится в течение 5 секунд.",
             style = MaterialTheme.typography.bodySmall
         )
+
+        OutlinedButton(onClick = onOpenParentSettings, modifier = Modifier.fillMaxWidth()) {
+            Text("Настройки родителя")
+        }
 
         Text(
             "Версия ${com.example.rebeka.BuildConfig.VERSION_NAME} (${com.example.rebeka.BuildConfig.VERSION_CODE})",
