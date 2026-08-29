@@ -38,15 +38,9 @@
             </intent-filter>
         </activity>
 
-        <!-- Экран блокировки поверх всего -->
-        <activity
-            android:name=".blocking.BlockOverlayActivity"
-            android:exported="false"
-            android:launchMode="singleInstance"
-            android:excludeFromRecents="true"
-            android:showWhenLocked="true"
-            android:turnScreenOn="true"
-            android:theme="@style/Theme.Rebeka.Overlay" />
+        <!-- Экран блокировки рисуется системным окном из BlockService
+             (blocking/OverlayBlocker.kt), а не Activity — Activity сворачивалась
+             кнопкой «домой» и блокировка обходилась. -->
 
         <!-- Device Admin -->
         <receiver

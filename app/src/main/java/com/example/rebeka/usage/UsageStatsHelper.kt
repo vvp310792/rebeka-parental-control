@@ -52,38 +52,42 @@ class UsageStatsHelper(private val context: Context) {
         var currentPackage: String? = null
         var currentStart = 0L
 
+        fun closeInterval(endTime: Long) {
+            val pkg = currentPackage
+            if (pkg != null && currentStart > 0 && pkg !in excluded) {
+                total += (endTime - currentStart).coerceAtLeast(0)
+            }
+            currentPackage = null
+            currentStart = 0
+        }
+
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
             when (event.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED -> {
+                    // Переключение между приложениями: PAUSED предыдущего может не прийти
+                    // вовсе (частое поведение на MIUI), поэтому закрываем интервал здесь.
+                    closeInterval(event.timeStamp)
                     currentPackage = event.packageName
                     currentStart = event.timeStamp
                 }
+
                 UsageEvents.Event.ACTIVITY_PAUSED,
                 UsageEvents.Event.ACTIVITY_STOPPED -> {
-                    if (currentPackage != null && currentPackage == event.packageName && currentStart > 0) {
-                        if (currentPackage !in excluded) {
-                            total += (event.timeStamp - currentStart).coerceAtLeast(0)
-                        }
-                    }
-                    currentPackage = null
-                    currentStart = 0
+                    // Раньше здесь сбрасывался текущий интервал даже для ЧУЖОГО пакета —
+                    // из-за этого терялось почти всё время, и счётчик показывал минуты
+                    // вместо часов. Реагируем только на события того пакета, что сейчас
+                    // на экране.
+                    if (currentPackage == event.packageName) closeInterval(event.timeStamp)
                 }
-                UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
-                    // Экран погас, а PAUSED мог не прийти — закрываем текущий интервал.
-                    if (currentPackage != null && currentStart > 0 && currentPackage !in excluded) {
-                        total += (event.timeStamp - currentStart).coerceAtLeast(0)
-                    }
-                    currentPackage = null
-                    currentStart = 0
-                }
+
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE,
+                UsageEvents.Event.KEYGUARD_SHOWN -> closeInterval(event.timeStamp)
             }
         }
 
         // Приложение открыто прямо сейчас — досчитываем незакрытый интервал.
-        if (currentPackage != null && currentStart > 0 && currentPackage !in excluded) {
-            total += (now - currentStart).coerceAtLeast(0)
-        }
+        closeInterval(now)
 
         return total
     }

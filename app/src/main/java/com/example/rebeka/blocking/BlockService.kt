@@ -3,35 +3,45 @@ package com.example.rebeka.blocking
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 import com.example.rebeka.RebekaApp
+import com.example.rebeka.data.StatsRepository
+import com.example.rebeka.notifications.ParentAlertNotifier
 import com.example.rebeka.steps.StepCounterManager
 import com.example.rebeka.usage.UsageStatsHelper
 import com.example.rebeka.util.TimeLimitCalculator
 import kotlinx.coroutines.*
 
 /**
- * Foreground-сервис — не Activity. Смахивание из recents его не убивает
- * (это весь смысл foreground + постоянное уведомление). START_STICKY на случай
- * если систhim всё же убьёт процесс при нехватке памяти — ОС попробует
- * перезапустить. BootReceiver поднимает сервис заново после перезагрузки.
+ * Foreground-сервис — не Activity. Смахивание из recents его не убивает.
+ * START_STICKY на случай если система убьёт процесс, BootReceiver поднимает
+ * после перезагрузки.
+ *
+ * Блокировка рисуется через OverlayBlocker (системное окно поверх всего),
+ * а не через Activity — Activity сворачивалась кнопкой «домой».
  */
 class BlockService : Service() {
 
-    private lateinit var repository: com.example.rebeka.data.StatsRepository
+    private lateinit var repository: StatsRepository
     private lateinit var usageHelper: UsageStatsHelper
     private lateinit var stepManager: StepCounterManager
+    private lateinit var overlay: OverlayBlocker
+
     private var loopJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private var wrongPinAttempts = 0
 
     override fun onCreate() {
         super.onCreate()
         val app = application as RebekaApp
-        repository = com.example.rebeka.data.StatsRepository(
-            app.database.dayStatsDao(), app.database.appSettingsDao()
-        )
+        repository = StatsRepository(app.database.dayStatsDao(), app.database.appSettingsDao())
         usageHelper = UsageStatsHelper(this)
         stepManager = StepCounterManager(this, repository)
+        overlay = OverlayBlocker(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -45,7 +55,7 @@ class BlockService : Service() {
         loopJob?.cancel()
         loopJob = scope.launch {
             while (isActive) {
-                checkAndEnforce()
+                runCatching { checkAndEnforce() }
                 delay(CHECK_INTERVAL_MS)
             }
         }
@@ -63,16 +73,55 @@ class BlockService : Service() {
         )
         repository.setBlocked(over)
 
-        // Родитель мог снять блокировку по PIN на время — тогда не показываем оверлей,
-        // иначе он всплывал бы снова через 30 секунд после верного PIN.
         val unlocked = repository.isTemporarilyUnlocked()
-
         // Пока PIN не задан, блокировать нельзя: снять её было бы нечем.
         val pinSet = repository.isPinSet()
 
-        if (over && !unlocked && pinSet) {
-            BlockOverlayActivity.show(this@BlockService)
+        val shouldBlock = over && !unlocked && pinSet
+
+        withContext(Dispatchers.Main) {
+            if (shouldBlock && !overlay.isShowing) {
+                val remaining = "Потрачено: ${formatDuration(usedMillis)} из ${
+                    formatDuration(
+                        TimeLimitCalculator.limitMillis(
+                            settings.baseLimitMinutes, today.steps, settings.stepsPerBonusHour
+                        )
+                    )
+                }"
+                overlay.show(remaining) { pin, callback -> verifyPinAsync(pin, callback) }
+            } else if (!shouldBlock && overlay.isShowing) {
+                overlay.hide()
+            }
         }
+    }
+
+    private fun verifyPinAsync(pin: String, callback: (Boolean) -> Unit) {
+        scope.launch {
+            val ok = repository.verifyPin(pin)
+            if (ok) {
+                // Без временного анлока проверка через несколько секунд вернула бы
+                // блокировку обратно, и верный PIN выглядел бы как не сработавший.
+                repository.grantTemporaryUnlock(minutes = 15)
+                wrongPinAttempts = 0
+                withContext(Dispatchers.Main) {
+                    overlay.hide()
+                    callback(true)
+                }
+            } else {
+                wrongPinAttempts++
+                if (wrongPinAttempts >= 3) {
+                    ParentAlertNotifier(this@BlockService).notifyAdminDisableAttempt()
+                }
+                withContext(Dispatchers.Main) { callback(false) }
+            }
+        }
+    }
+
+    private fun formatDuration(millis: Long): String {
+        val totalMinutes = millis / 60_000
+        val hours = totalMinutes / 60
+        val minutes = totalMinutes % 60
+        return if (hours > 0) "$hours ч $minutes мин" else "$minutes мин"
     }
 
     private fun buildNotification() =
@@ -85,6 +134,7 @@ class BlockService : Service() {
     override fun onDestroy() {
         stepManager.stop()
         loopJob?.cancel()
+        mainHandler.post { overlay.hide() }
         super.onDestroy()
     }
 
@@ -92,7 +142,10 @@ class BlockService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = 1
-        private const val CHECK_INTERVAL_MS = 30_000L // раз в 30 секунд достаточно для экранного времени
+
+        // 5 секунд: при 30 у ребёнка было бы полминуты свободного телефона
+        // после исчерпания лимита.
+        private const val CHECK_INTERVAL_MS = 5_000L
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, BlockService::class.java))
