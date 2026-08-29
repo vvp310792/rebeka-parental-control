@@ -125,6 +125,26 @@ fun HomeScreen(repository: StatsRepository) {
             )
         }
 
+        Button(
+            onClick = {
+                val app = context.applicationContext as com.example.rebeka.RebekaApp
+                app.launchPersistent { repository.startForcedBlock() }
+            },
+            enabled = settings.pinHash.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Заблокировать экран (тест)")
+        }
+
+        Text(
+            if (settings.pinHash.isEmpty())
+                "Сначала задайте PIN родителя — иначе блокировку будет нечем снять."
+            else
+                "Снять блокировку можно только PIN родителя или ${settings.stepsPerBonusHour} шагами. " +
+                    "Окно появится в течение 5 секунд.",
+            style = MaterialTheme.typography.bodySmall
+        )
+
         Text(
             "Версия ${com.example.rebeka.BuildConfig.VERSION_NAME} (${com.example.rebeka.BuildConfig.VERSION_CODE})",
             style = MaterialTheme.typography.labelSmall

@@ -77,20 +77,37 @@ class BlockService : Service() {
         // Пока PIN не задан, блокировать нельзя: снять её было бы нечем.
         val pinSet = repository.isPinSet()
 
-        val shouldBlock = over && !unlocked && pinSet
+        // Тестовая блокировка снимается ровно теми же двумя путями, что и обычная.
+        // Шаги считаются от отметки в момент нажатия кнопки, а не от нуля за день —
+        // иначе при уже набранных 6000 шагах блокировка снялась бы мгновенно.
+        var forcedActive = settings.forcedBlockActive
+        val stepsSinceForced = today.steps - settings.forcedBlockStepsBaseline
+        if (forcedActive && stepsSinceForced >= settings.stepsPerBonusHour) {
+            repository.clearForcedBlock()
+            forcedActive = false
+        }
+
+        val shouldBlock = pinSet && (forcedActive || (over && !unlocked))
 
         // Два пути снятия блокировки: дошагать до следующего бонусного часа
         // (лимит вырастет, over станет false и окно закроется само) либо ввести PIN.
-        val stepsToNextBonus = if (settings.stepsPerBonusHour > 0)
-            settings.stepsPerBonusHour - (today.steps % settings.stepsPerBonusHour) else 0
+        val stepsToNextBonus = if (forcedActive) {
+            (settings.stepsPerBonusHour - stepsSinceForced).coerceAtLeast(0)
+        } else if (settings.stepsPerBonusHour > 0) {
+            settings.stepsPerBonusHour - (today.steps % settings.stepsPerBonusHour)
+        } else 0
 
         val statusText = buildString {
-            append("Потрачено: ${formatDuration(usedMillis)}")
-            append(" из ${formatDuration(TimeLimitCalculator.limitMillis(
-                settings.baseLimitMinutes, today.steps, settings.stepsPerBonusHour
-            ))}")
+            if (forcedActive) {
+                append("Тестовая блокировка включена вручную")
+            } else {
+                append("Потрачено: ${formatDuration(usedMillis)}")
+                append(" из ${formatDuration(TimeLimitCalculator.limitMillis(
+                    settings.baseLimitMinutes, today.steps, settings.stepsPerBonusHour
+                ))}")
+            }
             append("\n\nШагов сегодня: ${today.steps}")
-            append("\nЕщё $stepsToNextBonus шагов — и откроется +1 час")
+            append("\nЕщё $stepsToNextBonus шагов — и блокировка снимется")
             append("\n\nИли введите PIN родителя")
         }
 
@@ -113,6 +130,7 @@ class BlockService : Service() {
                 // Без временного анлока проверка через несколько секунд вернула бы
                 // блокировку обратно, и верный PIN выглядел бы как не сработавший.
                 repository.grantTemporaryUnlock(minutes = 15)
+                repository.clearForcedBlock()
                 wrongPinAttempts = 0
                 withContext(Dispatchers.Main) {
                     overlay.hide()

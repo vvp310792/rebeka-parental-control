@@ -42,9 +42,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Кнопка тестовой блокировки: два новых поля. Логика снятия не меняется —
+         * PIN или 5000 шагов от отметки, зафиксированной при нажатии.
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE app_settings ADD COLUMN forcedBlockActive INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE app_settings ADD COLUMN forcedBlockStepsBaseline INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "rebeka.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }

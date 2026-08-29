@@ -66,4 +66,21 @@ class StatsRepository(
 
     suspend fun isTemporarilyUnlocked(): Boolean =
         getSettings().unlockedUntilEpochMillis > System.currentTimeMillis()
+
+    /** Тестовая блокировка: фиксируем текущие шаги как точку отсчёта для 5000. */
+    suspend fun startForcedBlock() {
+        val steps = getToday().steps
+        saveSettings(
+            getSettings().copy(
+                forcedBlockActive = true,
+                forcedBlockStepsBaseline = steps,
+                // Снимаем возможный «оплаченный» ранее анлок, иначе тест не сработает.
+                unlockedUntilEpochMillis = 0
+            )
+        )
+    }
+
+    suspend fun clearForcedBlock() {
+        saveSettings(getSettings().copy(forcedBlockActive = false, forcedBlockStepsBaseline = 0))
+    }
 }
