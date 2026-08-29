@@ -85,6 +85,7 @@ private fun SettingsForm(repository: StatsRepository, onDone: () -> Unit) {
     var loaded by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var allowedUninstall by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val s = repository.getSettings()
@@ -153,6 +154,22 @@ private fun SettingsForm(repository: StatsRepository, onDone: () -> Unit) {
             },
             modifier = Modifier.fillMaxWidth()
         ) { Text("Сохранить") }
+
+        Button(onClick = {
+            com.example.rebeka.blocking.BlockState.allowUninstall(minutes = 5)
+            allowedUninstall = true
+        }, modifier = Modifier.fillMaxWidth()) {
+            Text("Разрешить удаление на 5 минут")
+        }
+
+        if (allowedUninstall) {
+            Text(
+                "Защита от удаления снята на 5 минут. Она включится обратно сама — " +
+                    "также после перезагрузки телефона.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
 
         TextButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Готово") }
     }

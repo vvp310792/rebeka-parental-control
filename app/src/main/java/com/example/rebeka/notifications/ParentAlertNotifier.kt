@@ -43,6 +43,15 @@ class ParentAlertNotifier(private val context: Context) {
         sendRemote("admin_disabled", emptyMap())
     }
 
+    fun notifyUninstallAttempt() {
+        showLocal(
+            id = 104,
+            title = "Попытка удалить приложение",
+            text = "Диалог удаления был закрыт автоматически"
+        )
+        sendRemote("uninstall_attempt", emptyMap())
+    }
+
     fun notifyOverlayPermissionRevoked() {
         showLocal(
             id = 103,

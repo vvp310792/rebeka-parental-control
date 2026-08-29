@@ -34,14 +34,62 @@ class OverlayBlocker(private val context: Context) {
         context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     private var rootView: View? = null
+    private var statusBarBlockerView: View? = null
     private var subtitleView: TextView? = null
 
     val isShowing: Boolean get() = rootView != null
 
     /**
+     * Отдельное узкое окно поверх статус-бара, перехватывающее касания.
+     *
+     * Одного полноэкранного оверлея мало: системная шторка вытягивается жестом
+     * от верхней кромки, и этот жест обрабатывается системой раньше, чем окном
+     * приложения. Закрытие шторки через accessibility срабатывает уже после того,
+     * как она открылась — ребёнок успевает увидеть переключатели. Это окно
+     * съедает сам жест, так что тянуть становится физически не за что.
+     */
+    private fun showStatusBarBlocker() {
+        if (statusBarBlockerView != null) return
+
+        val blocker = object : View(context) {
+            @SuppressLint("ClickableViewAccessibility")
+            override fun onTouchEvent(event: android.view.MotionEvent): Boolean = true
+        }
+
+        val statusBarHeight = run {
+            val id = context.resources.getIdentifier("status_bar_height", "dimen", "android")
+            val fromSystem = if (id > 0) context.resources.getDimensionPixelSize(id) else 0
+            // С запасом: на части прошивок жест ловится чуть ниже самой полосы.
+            (fromSystem * 2).coerceAtLeast(96)
+        }
+
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+        }
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            statusBarHeight,
+            type,
+            // NOT_FOCUSABLE — чтобы не перехватывать ввод у поля PIN основного окна.
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.TOP }
+
+        runCatching {
+            windowManager.addView(blocker, params)
+            statusBarBlockerView = blocker
+        }
+    }
+
+    /**
      * Текст на экране блокировки должен обновляться, пока окно висит: ребёнок ходит,
      * шаги растут, и он должен видеть, сколько осталось до снятия блокировки.
-     * Раньше текст задавался один раз при показе и застывал.
      */
     fun update(statusText: String) {
         subtitleView?.text = statusText
@@ -173,6 +221,7 @@ class OverlayBlocker(private val context: Context) {
         try {
             windowManager.addView(root, params)
             rootView = root
+            showStatusBarBlocker()
         } catch (e: Exception) {
             // Нет разрешения «поверх других приложений» — молча выходим,
             // онбординг показывает этот пункт отдельно.
@@ -182,12 +231,9 @@ class OverlayBlocker(private val context: Context) {
 
     fun hide() {
         subtitleView = null
-        rootView?.let {
-            try {
-                windowManager.removeView(it)
-            } catch (_: Exception) {
-            }
-        }
+        rootView?.let { runCatching { windowManager.removeView(it) } }
         rootView = null
+        statusBarBlockerView?.let { runCatching { windowManager.removeView(it) } }
+        statusBarBlockerView = null
     }
 }

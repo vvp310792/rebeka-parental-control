@@ -12,6 +12,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.example.rebeka.admin.AdminUtils
 import com.example.rebeka.data.AppSettings
 import com.example.rebeka.data.DayStats
 import com.example.rebeka.data.StatsRepository
@@ -149,6 +150,27 @@ fun HomeScreen(repository: StatsRepository, onOpenParentSettings: () -> Unit = {
                     "Окно появится в течение 5 секунд.",
             style = MaterialTheme.typography.bodySmall
         )
+
+        if (!AdminUtils.isAdminActive(context)) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Приложение можно удалить!",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        "Права администратора устройства не выданы. Без них система " +
+                            "разрешает удалить ChildStep обычным способом с рабочего стола.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Button(
+                        onClick = { context.startActivity(AdminUtils.requestAdminIntent(context)) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Выдать права администратора") }
+                }
+            }
+        }
 
         OutlinedButton(onClick = onOpenParentSettings, modifier = Modifier.fillMaxWidth()) {
             Text("Настройки родителя")

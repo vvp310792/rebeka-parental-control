@@ -6,65 +6,81 @@ import com.example.rebeka.blocking.BlockState
 import com.example.rebeka.notifications.ParentAlertNotifier
 
 /**
- * Две задачи:
+ * Три задачи:
  *
- * 1. Пока висит блокировка — не давать открыть шторку. Полностью запретить её
- *    может только Device Owner (setStatusBarDisabled); стороннее приложение
- *    может лишь закрыть её сразу после открытия. Практически это выглядит так,
- *    что шторка «не открывается»: она схлопывается за доли секунды, и добраться
- *    до переключателя «поверх других окон» ребёнок не успевает.
+ * 1. Пока висит блокировка — не давать открыть шторку и Настройки.
+ * 2. ВСЕГДА (не только во время блокировки) перехватывать диалог удаления
+ *    приложения и экраны, откуда снимают права администратора. Именно здесь была
+ *    дыра: на телефоне без выданных прав администратора ребёнок просто удалял
+ *    приложение с рабочего стола, и ничего этому не мешало.
+ * 3. Уведомлять родителя о каждой такой попытке.
  *
- * 2. Ловить открытие экранов «Администраторы устройства» и «О приложении»,
- *    откуда идут снятие прав и удаление, и уведомлять родителя.
+ * Родитель может временно снять защиту от удаления в настройках под PIN —
+ * см. BlockState.allowUninstall().
  */
 class BlockAccessibilityService : AccessibilityService() {
 
-    private val watchedScreenClassNames = listOf(
-        "com.android.settings.DeviceAdminSettings",
-        "com.android.settings.applications.specialaccess.deviceadmin.DeviceAdminSettings",
-        "com.android.settings.applications.InstalledAppDetails"
+    /** Диалог удаления: у каждого вендора свой установщик пакетов. */
+    private val uninstallerPackages = listOf(
+        "com.android.packageinstaller",
+        "com.google.android.packageinstaller",
+        "com.miui.packageinstaller",
+        "com.samsung.android.packageinstaller",
+        "com.huawei.packageinstaller",
+        "com.oppo.packageinstaller",
+        "com.vivo.packageinstaller"
     )
 
-    /**
-     * Экраны, с которых отзывают «поверх других окон». Android сам показывает
-     * уведомление об активном оверлее и не даёт его скрыть, поэтому единственное,
-     * что можно сделать — не пустить на сам экран отзыва, пока блокировка активна.
-     */
-    private val overlaySettingsClassNames = listOf(
+    /** Экраны, откуда снимают администратора или идут к удалению. */
+    private val protectedScreenClassNames = listOf(
+        "DeviceAdminSettings",
+        "DeviceAdminAdd",
+        "InstalledAppDetails",
+        "AppInfoDashboard",
+        "UninstallerActivity",
         "AppDrawOverlaySettings",
         "DrawOverlayDetails",
-        "ManageApplications",
-        "AlertWindow",
-        "AppOpsDetails"
+        "AlertWindow"
     )
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        val packageName = event.packageName?.toString()
+        val packageName = event.packageName?.toString() ?: return
+        val className = event.className?.toString().orEmpty()
 
-        // Шторка и панель быстрых настроек живут в systemui. Пока блокировка
-        // активна — немедленно закрываем всё, что оттуда открылось.
+        // Шторка живёт в systemui. Пока блокировка активна — закрываем сразу.
         if (BlockState.blocked && packageName == SYSTEM_UI_PACKAGE) {
             performGlobalAction(GLOBAL_ACTION_BACK)
             return
         }
 
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        val className = event.className?.toString() ?: return
-
-        // Во время блокировки Настройки вообще не открыть: ребёнок идёт туда только
-        // чтобы отозвать разрешение или снять администратора.
-        if (BlockState.blocked && packageName == SETTINGS_PACKAGE) {
+        // Диалог удаления — перехватывается всегда, независимо от блокировки.
+        // Ребёнок удаляет приложение именно тогда, когда телефон не заблокирован.
+        if (BlockState.uninstallProtectionActive && packageName in uninstallerPackages) {
             performGlobalAction(GLOBAL_ACTION_BACK)
-            ParentAlertNotifier(this).notifySettingsScreenOpened(className)
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            ParentAlertNotifier(this).notifyUninstallAttempt()
             return
         }
 
-        if (overlaySettingsClassNames.any { className.contains(it, ignoreCase = true) }) {
-            ParentAlertNotifier(this).notifySettingsScreenOpened(className)
-        }
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
-        if (watchedScreenClassNames.any { className.contains(it) }) {
-            ParentAlertNotifier(this).notifySettingsScreenOpened(className)
+        if (packageName == SETTINGS_PACKAGE) {
+            // Во время блокировки Настройки не открыть вообще: идти туда ребёнку
+            // незачем, кроме как чтобы обойти блокировку.
+            if (BlockState.blocked) {
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                ParentAlertNotifier(this).notifySettingsScreenOpened(className)
+                return
+            }
+
+            // Вне блокировки закрываем только опасные экраны: снятие админа,
+            // страницу приложения (откуда «Удалить»), отзыв показа поверх окон.
+            if (BlockState.uninstallProtectionActive &&
+                protectedScreenClassNames.any { className.contains(it, ignoreCase = true) }
+            ) {
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                ParentAlertNotifier(this).notifySettingsScreenOpened(className)
+            }
         }
     }
 
