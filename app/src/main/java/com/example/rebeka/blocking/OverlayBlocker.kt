@@ -15,6 +15,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.example.rebeka.admin.AdminUtils
 
 /**
  * Экран блокировки как СИСТЕМНОЕ ОКНО, а не Activity.
@@ -33,12 +34,22 @@ class OverlayBlocker(private val context: Context) {
         context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     private var rootView: View? = null
+    private var subtitleView: TextView? = null
 
     val isShowing: Boolean get() = rootView != null
 
+    /**
+     * Текст на экране блокировки должен обновляться, пока окно висит: ребёнок ходит,
+     * шаги растут, и он должен видеть, сколько осталось до снятия блокировки.
+     * Раньше текст задавался один раз при показе и застывал.
+     */
+    fun update(statusText: String) {
+        subtitleView?.text = statusText
+    }
+
     @SuppressLint("SetTextI18n")
     fun show(
-        remainingText: String,
+        statusText: String,
         onPinSubmit: (pin: String, callback: (Boolean) -> Unit) -> Unit
     ) {
         if (isShowing) return
@@ -67,18 +78,20 @@ class OverlayBlocker(private val context: Context) {
         }
 
         val subtitle = TextView(context).apply {
-            text = "$remainingText\n\nБольше шагов — больше времени:\n+1 час за каждые 5000 шагов"
+            text = statusText
             textSize = 15f
             setTextColor(Color.DKGRAY)
             gravity = Gravity.CENTER
             setPadding(0, 32, 0, 48)
         }
+        subtitleView = subtitle
 
         val pinInput = EditText(context).apply {
-            hint = "PIN родителя"
+            hint = "PIN родителя (${AdminUtils.PIN_LENGTH} цифр)"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
             gravity = Gravity.CENTER
             textSize = 18f
+            filters = arrayOf(android.text.InputFilter.LengthFilter(AdminUtils.PIN_LENGTH))
         }
 
         val error = TextView(context).apply {
@@ -92,8 +105,8 @@ class OverlayBlocker(private val context: Context) {
             text = "Разблокировать"
             setOnClickListener {
                 val pin = pinInput.text.toString()
-                if (pin.length < 4) {
-                    error.text = "PIN не короче 4 цифр"
+                if (pin.length != AdminUtils.PIN_LENGTH) {
+                    error.text = "PIN из ${AdminUtils.PIN_LENGTH} цифр"
                     error.visibility = View.VISIBLE
                     return@setOnClickListener
                 }
@@ -152,6 +165,7 @@ class OverlayBlocker(private val context: Context) {
     }
 
     fun hide() {
+        subtitleView = null
         rootView?.let {
             try {
                 windowManager.removeView(it)

@@ -10,6 +10,9 @@ import java.util.Base64
 
 object AdminUtils {
 
+    /** Длина родительского PIN. Меняется здесь — применяется во всех экранах сразу. */
+    const val PIN_LENGTH = 6
+
     fun adminComponent(context: Context) =
         ComponentName(context, RebekaDeviceAdminReceiver::class.java)
 

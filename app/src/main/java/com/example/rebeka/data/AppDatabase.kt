@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [DayStats::class, AppSettings::class],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,9 +30,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * PIN стал шестизначным. Старый 4-значный хэш нужно обнулить: длину из хэша
+         * не восстановить, а если оставить как есть, родитель не сможет разблокировать
+         * (экран требует 6 цифр, а сохранён хэш от 4). Приложение попросит задать
+         * новый PIN при следующем запуске. Статистика при этом не трогается.
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE app_settings SET pinHash = '', pinSalt = ''")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "rebeka.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }

@@ -79,16 +79,27 @@ class BlockService : Service() {
 
         val shouldBlock = over && !unlocked && pinSet
 
+        // Два пути снятия блокировки: дошагать до следующего бонусного часа
+        // (лимит вырастет, over станет false и окно закроется само) либо ввести PIN.
+        val stepsToNextBonus = if (settings.stepsPerBonusHour > 0)
+            settings.stepsPerBonusHour - (today.steps % settings.stepsPerBonusHour) else 0
+
+        val statusText = buildString {
+            append("Потрачено: ${formatDuration(usedMillis)}")
+            append(" из ${formatDuration(TimeLimitCalculator.limitMillis(
+                settings.baseLimitMinutes, today.steps, settings.stepsPerBonusHour
+            ))}")
+            append("\n\nШагов сегодня: ${today.steps}")
+            append("\nЕщё $stepsToNextBonus шагов — и откроется +1 час")
+            append("\n\nИли введите PIN родителя")
+        }
+
         withContext(Dispatchers.Main) {
             if (shouldBlock && !overlay.isShowing) {
-                val remaining = "Потрачено: ${formatDuration(usedMillis)} из ${
-                    formatDuration(
-                        TimeLimitCalculator.limitMillis(
-                            settings.baseLimitMinutes, today.steps, settings.stepsPerBonusHour
-                        )
-                    )
-                }"
-                overlay.show(remaining) { pin, callback -> verifyPinAsync(pin, callback) }
+                overlay.show(statusText) { pin, callback -> verifyPinAsync(pin, callback) }
+            } else if (shouldBlock && overlay.isShowing) {
+                // Окно уже висит — обновляем счётчик шагов, чтобы ребёнок видел прогресс.
+                overlay.update(statusText)
             } else if (!shouldBlock && overlay.isShowing) {
                 overlay.hide()
             }
