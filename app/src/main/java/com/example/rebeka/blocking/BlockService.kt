@@ -63,7 +63,14 @@ class BlockService : Service() {
         )
         repository.setBlocked(over)
 
-        if (over) {
+        // Родитель мог снять блокировку по PIN на время — тогда не показываем оверлей,
+        // иначе он всплывал бы снова через 30 секунд после верного PIN.
+        val unlocked = repository.isTemporarilyUnlocked()
+
+        // Пока PIN не задан, блокировать нельзя: снять её было бы нечем.
+        val pinSet = repository.isPinSet()
+
+        if (over && !unlocked && pinSet) {
             BlockOverlayActivity.show(this@BlockService)
         }
     }

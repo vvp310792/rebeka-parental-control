@@ -8,10 +8,13 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
@@ -27,6 +30,7 @@ import com.example.rebeka.data.StatsRepository
 import com.example.rebeka.navigation.Routes
 import com.example.rebeka.ui.home.HomeScreen
 import com.example.rebeka.ui.home.OnboardingScreen
+import com.example.rebeka.ui.home.PinSetupScreen
 import com.example.rebeka.usage.UsageStatsHelper
 
 class MainActivity : ComponentActivity() {
@@ -86,11 +90,15 @@ private fun RebekaNavHost(repository: StatsRepository) {
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var onboardingComplete by remember { mutableStateOf(isOnboardingComplete(context)) }
+    // null = ещё не прочитали из БД, не решаем стартовый экран раньше времени
+    var pinSet by remember { mutableStateOf<Boolean?>(null) }
 
-    // Сервис слежения стартует, как только все разрешения реально выданы —
-    // не при простом открытии Activity, иначе он молча читает нули.
-    LaunchedEffect(onboardingComplete) {
-        if (onboardingComplete) BlockService.start(context)
+    LaunchedEffect(Unit) { pinSet = repository.isPinSet() }
+
+    // Сервис слежения стартует, как только все разрешения реально выданы
+    // И задан PIN — без PIN блокировку было бы нечем снять.
+    LaunchedEffect(onboardingComplete, pinSet) {
+        if (onboardingComplete && pinSet == true) BlockService.start(context)
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -103,10 +111,26 @@ private fun RebekaNavHost(repository: StatsRepository) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    NavHost(
-        navController = navController,
-        startDestination = if (onboardingComplete) Routes.HOME else Routes.ONBOARDING
-    ) {
+    val start = when {
+        pinSet == null -> null
+        pinSet == false -> Routes.PIN_SETUP
+        !onboardingComplete -> Routes.ONBOARDING
+        else -> Routes.HOME
+    }
+
+    if (start == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
+
+    NavHost(navController = navController, startDestination = start) {
+        composable(Routes.PIN_SETUP) {
+            PinSetupScreen(repository, onPinSet = {
+                pinSet = true
+                val next = if (isOnboardingComplete(context)) Routes.HOME else Routes.ONBOARDING
+                navController.navigate(next) { popUpTo(Routes.PIN_SETUP) { inclusive = true } }
+            })
+        }
         composable(Routes.HOME) { HomeScreen(repository) }
         composable(Routes.ONBOARDING) {
             OnboardingScreen(onAllGranted = {

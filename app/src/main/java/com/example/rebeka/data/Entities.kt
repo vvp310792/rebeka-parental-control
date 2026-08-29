@@ -32,5 +32,9 @@ data class AppSettings(
     val stepsPerBonusHour: Int = 5000,     // 5000 шагов = +1 час
     val pinHash: String = "",              // SHA-256(pin + salt)
     val pinSalt: String = "",
-    val parentNotifyEndpoint: String = ""  // куда слать пуш при попытке отключения, см. notifications/
+    val parentNotifyEndpoint: String = "", // куда слать пуш при попытке отключения, см. notifications/
+    // Временная разблокировка родителем: до этого момента оверлей не показывается,
+    // даже если лимит исчерпан. Иначе после верного PIN сервис через 30 секунд
+    // показал бы экран блокировки снова.
+    val unlockedUntilEpochMillis: Long = 0
 )

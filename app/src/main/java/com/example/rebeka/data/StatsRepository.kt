@@ -1,5 +1,6 @@
 package com.example.rebeka.data
 
+import com.example.rebeka.admin.AdminUtils
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
@@ -43,4 +44,26 @@ class StatsRepository(
     suspend fun getSettings(): AppSettings = settingsDao.get() ?: AppSettings()
 
     suspend fun saveSettings(settings: AppSettings) = settingsDao.upsert(settings)
+
+    suspend fun isPinSet(): Boolean = getSettings().pinHash.isNotEmpty()
+
+    suspend fun setPin(pin: String) {
+        val salt = AdminUtils.newSalt()
+        saveSettings(getSettings().copy(pinHash = AdminUtils.hashPin(pin, salt), pinSalt = salt))
+    }
+
+    suspend fun verifyPin(pin: String): Boolean {
+        val s = getSettings()
+        if (s.pinHash.isEmpty()) return false
+        return AdminUtils.verifyPin(pin, s.pinSalt, s.pinHash)
+    }
+
+    /** Родитель снял блокировку на N минут — оверлей не показывается до этого момента. */
+    suspend fun grantTemporaryUnlock(minutes: Int) {
+        val until = System.currentTimeMillis() + minutes * 60_000L
+        saveSettings(getSettings().copy(unlockedUntilEpochMillis = until))
+    }
+
+    suspend fun isTemporarilyUnlocked(): Boolean =
+        getSettings().unlockedUntilEpochMillis > System.currentTimeMillis()
 }
