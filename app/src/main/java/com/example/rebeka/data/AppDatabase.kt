@@ -9,53 +9,65 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [DayStats::class, AppSettings::class],
-    version = 3,
-    exportSchema = true
+    version = 5,
+    exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dayStatsDao(): DayStatsDao
     abstract fun appSettingsDao(): AppSettingsDao
 
     companion object {
-        /**
-         * Добавлена временная разблокировка родителем по PIN.
-         * Никогда не удалять старые миграции и не использовать деструктивный
-         * fallback — иначе апдейт сотрёт статистику пользователю.
-         */
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "ALTER TABLE app_settings ADD COLUMN unlockedUntilEpochMillis INTEGER NOT NULL DEFAULT 0"
-                )
-            }
-        }
 
         /**
-         * PIN стал шестизначным. Старый 4-значный хэш нужно обнулить: длину из хэша
-         * не восстановить, а если оставить как есть, родитель не сможет разблокировать
-         * (экран требует 6 цифр, а сохранён хэш от 4). Приложение попросит задать
-         * новый PIN при следующем запуске. Статистика при этом не трогается.
+         * Ровно та схема, которую Room выводит из @Entity AppSettings.
+         *
+         * Важно: НЕ указывать здесь DEFAULT для колонок. Room сверяет схему из
+         * аннотаций с реальной таблицей, и если в БД у колонки есть SQLite-дефолт,
+         * а в @Entity нет @ColumnInfo(defaultValue = ...), проверка падает с
+         * "Migration didn't properly handle: app_settings". Именно это и произошло:
+         * прошлые миграции добавляли колонки через ALTER TABLE ... DEFAULT 0.
          */
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("UPDATE app_settings SET pinHash = '', pinSalt = ''")
-            }
-        }
+        private const val CREATE_APP_SETTINGS = """
+            CREATE TABLE IF NOT EXISTS app_settings (
+                id INTEGER NOT NULL,
+                baseLimitMinutes INTEGER NOT NULL,
+                stepsPerBonusHour INTEGER NOT NULL,
+                pinHash TEXT NOT NULL,
+                pinSalt TEXT NOT NULL,
+                parentNotifyEndpoint TEXT NOT NULL,
+                unlockedUntilEpochMillis INTEGER NOT NULL,
+                forcedBlockActive INTEGER NOT NULL,
+                forcedBlockStepsBaseline INTEGER NOT NULL,
+                PRIMARY KEY(id)
+            )
+        """
 
         /**
-         * Кнопка тестовой блокировки: два новых поля. Логика снятия не меняется —
-         * PIN или 5000 шагов от отметки, зафиксированной при нажатии.
+         * Таблица настроек пересоздаётся начисто с любой прошлой версии: в разных
+         * сборках она успела получить разный набор колонок и разные SQLite-дефолты,
+         * и привести это к одному виду точечными ALTER-ами уже нельзя.
+         *
+         * Настройки сбрасываются на дефолтные, PIN нужно задать заново — приложение
+         * попросит на старте. Таблица day_stats (шаги и экранное время) НЕ трогается,
+         * статистика сохраняется.
          */
-        private val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE app_settings ADD COLUMN forcedBlockActive INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE app_settings ADD COLUMN forcedBlockStepsBaseline INTEGER NOT NULL DEFAULT 0")
-            }
+        private fun recreateSettings(db: SupportSQLiteDatabase) {
+            db.execSQL("DROP TABLE IF EXISTS app_settings")
+            db.execSQL(CREATE_APP_SETTINGS)
+        }
+
+        private fun migrationTo5(from: Int) = object : Migration(from, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) = recreateSettings(db)
         }
 
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "rebeka.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(
+                    migrationTo5(1),
+                    migrationTo5(2),
+                    migrationTo5(3),
+                    migrationTo5(4)
+                )
                 .build()
     }
 }
