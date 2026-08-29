@@ -115,6 +115,9 @@ class BlockService : Service() {
         }
 
         withContext(Dispatchers.Main) {
+            // Accessibility-служба читает этот флаг, чтобы схлопывать шторку.
+            BlockState.blocked = shouldBlock
+
             if (shouldBlock && !overlay.isShowing) {
                 overlay.show(statusText) { pin, callback -> verifyPinAsync(pin, callback) }
             } else if (shouldBlock && overlay.isShowing) {
@@ -159,11 +162,12 @@ class BlockService : Service() {
     private fun buildNotification() =
         NotificationCompat.Builder(this, RebekaApp.CHANNEL_TRACKING)
             .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
-            .setContentTitle("Rebeka следит за экранным временем")
+            .setContentTitle("ChildStep следит за экранным временем")
             .setOngoing(true)
             .build()
 
     override fun onDestroy() {
+        BlockState.blocked = false
         stepManager.stop()
         loopJob?.cancel()
         mainHandler.post { overlay.hide() }

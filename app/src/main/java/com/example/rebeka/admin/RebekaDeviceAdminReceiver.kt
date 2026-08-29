@@ -18,7 +18,7 @@ class RebekaDeviceAdminReceiver : DeviceAdminReceiver() {
 
     override fun onDisableRequested(context: Context, intent: Intent): CharSequence {
         ParentAlertNotifier(context).notifyAdminDisableAttempt()
-        return "Отключение контроля потребует PIN родителя в самом приложении Rebeka."
+        return "Отключение контроля потребует PIN родителя в самом приложении ChildStep."
     }
 
     override fun onDisabled(context: Context, intent: Intent) {

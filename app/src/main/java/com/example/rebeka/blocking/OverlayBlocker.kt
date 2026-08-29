@@ -149,10 +149,26 @@ class OverlayBlocker(private val context: Context) {
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
             // Окно фокусируемое — иначе в поле PIN нельзя было бы ничего ввести.
+            // LAYOUT_IN_SCREEN + LAYOUT_NO_LIMITS растягивают окно под статус-бар
+            // и навигацию: иначе полоса сверху остаётся системной, и оттуда
+            // стягивается шторка с переключателем «поверх других окон».
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_FULLSCREEN,
             PixelFormat.OPAQUE
         ).apply { gravity = Gravity.CENTER }
+
+        // Иммерсивный режим: системные панели прячутся, тянуть сверху нечего.
+        root.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            )
 
         try {
             windowManager.addView(root, params)

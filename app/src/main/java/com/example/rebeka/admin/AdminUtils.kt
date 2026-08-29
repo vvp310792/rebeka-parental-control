@@ -27,7 +27,7 @@ object AdminUtils {
             putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent(context))
             putExtra(
                 DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Нужно, чтобы Rebeka не могли удалить без разрешения родителя."
+                "Нужно, чтобы ChildStep не могли удалить без разрешения родителя."
             )
         }
 
