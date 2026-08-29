@@ -63,7 +63,7 @@ fun HomeScreen(repository: StatsRepository, onOpenParentSettings: () -> Unit = {
     val remainingMillis = TimeLimitCalculator.remainingMillis(
         settings.baseLimitMinutes, today.steps, settings.stepsPerBonusHour, today.usedMillis
     )
-    val bonusHours = if (settings.stepsPerBonusHour > 0) today.steps / settings.stepsPerBonusHour else 0
+    val bonusMillis = TimeLimitCalculator.bonusMillis(today.steps, settings.stepsPerBonusHour)
     val progress = if (limitMillis > 0) (today.usedMillis.toFloat() / limitMillis).coerceIn(0f, 1f) else 0f
 
     Column(
@@ -98,14 +98,19 @@ fun HomeScreen(repository: StatsRepository, onOpenParentSettings: () -> Unit = {
 
         StatCard(
             label = "Из чего складывается лимит",
-            value = "${settings.baseLimitMinutes / 60} ч базовых + $bonusHours ч за шаги"
+            value = "${settings.baseLimitMinutes / 60} ч базовых + ${formatDuration(bonusMillis)} за шаги"
         )
 
-        val toNextBonus = if (settings.stepsPerBonusHour > 0)
-            settings.stepsPerBonusHour - (today.steps % settings.stepsPerBonusHour) else 0
         StatCard(
-            label = "До следующего бонусного часа",
-            value = "$toNextBonus шагов"
+            label = "Курс обмена",
+            value = "${settings.stepsPerBonusHour} шагов = 1 час"
+        )
+
+        StatCard(
+            label = "Заработано последними 1000 шагами",
+            value = formatDuration(
+                TimeLimitCalculator.bonusMillis(1000, settings.stepsPerBonusHour)
+            )
         )
 
         if (today.blocked) {

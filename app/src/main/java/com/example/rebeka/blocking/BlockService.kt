@@ -89,13 +89,16 @@ class BlockService : Service() {
 
         val shouldBlock = pinSet && (forcedActive || (over && !unlocked))
 
-        // Два пути снятия блокировки: дошагать до следующего бонусного часа
-        // (лимит вырастет, over станет false и окно закроется само) либо ввести PIN.
-        val stepsToNextBonus = if (forcedActive) {
+        // Два пути снятия блокировки: дошагать (каждый шаг сразу добавляет время,
+        // и как только заработанного хватит на перерасход — окно закроется само)
+        // либо ввести PIN.
+        val stepsToUnlock = if (forcedActive) {
             (settings.stepsPerBonusHour - stepsSinceForced).coerceAtLeast(0)
-        } else if (settings.stepsPerBonusHour > 0) {
-            settings.stepsPerBonusHour - (today.steps % settings.stepsPerBonusHour)
-        } else 0
+        } else {
+            TimeLimitCalculator.stepsNeededToUnlock(
+                settings.baseLimitMinutes, today.steps, settings.stepsPerBonusHour, usedMillis
+            )
+        }
 
         val statusText = buildString {
             if (forcedActive) {
@@ -107,7 +110,7 @@ class BlockService : Service() {
                 ))}")
             }
             append("\n\nШагов сегодня: ${today.steps}")
-            append("\nЕщё $stepsToNextBonus шагов — и блокировка снимется")
+            append("\nЕщё $stepsToUnlock шагов — и блокировка снимется")
             append("\n\nИли введите PIN родителя")
         }
 
