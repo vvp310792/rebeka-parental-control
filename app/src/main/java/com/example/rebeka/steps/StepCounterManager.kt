@@ -15,6 +15,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.time.LocalTime
 
 /**
  * TYPE_STEP_COUNTER отдаёт число шагов, накопленное с момента последней ЗАГРУЗКИ
@@ -82,7 +83,19 @@ class StepCounterManager(
         scope.launch {
             writeMutex.withLock {
                 val today = repository.getToday()
-                val lastRaw = today.stepsBaselineAtMidnight
+
+                // Самовосстановление. Значение в базе могло испортиться: переход
+                // между версиями, сбой записи, рассинхрон с датчиком. Проверяем,
+                // возможно ли столько шагов за время, прошедшее с начала суток:
+                // быстрый бег — около 200 шагов в минуту, больше человек не сделает.
+                // Если накопленное неправдоподобно — начинаем счёт заново, не
+                // дожидаясь ручного сброса родителем.
+                val minutesSinceMidnight = LocalTime.now().toSecondOfDay() / 60
+                val plausibleMaxNow = (minutesSinceMidnight * MAX_STEPS_PER_MINUTE)
+                    .coerceAtMost(MAX_STEPS_PER_DAY)
+
+                val storedSteps = if (today.steps > plausibleMaxNow) 0L else today.steps
+                val lastRaw = if (today.steps > plausibleMaxNow) 0L else today.stepsBaselineAtMidnight
 
                 val rawDelta = when {
                     // Первое показание за сегодня: прироста ещё нет, только фиксируем точку.
@@ -93,14 +106,12 @@ class StepCounterManager(
                     else -> rawTotal
                 }
 
-                // Санитарная проверка. Человек не делает тысячи шагов между двумя
-                // событиями датчика, приходящими раз в несколько секунд. Огромная
-                // дельта означает рассинхрон: в поле «последнее показание» лежит
-                // мусор от прошлой версии или после сбоя. В этом случае прирост не
-                // засчитываем, а просто пересинхронизируемся на текущее показание.
+                // Прирост между двумя событиями датчика, приходящими раз в несколько
+                // секунд, не может быть большим. Огромная дельта означает рассинхрон:
+                // прирост не засчитываем, просто пересинхронизируемся на текущее показание.
                 val delta = if (rawDelta > MAX_PLAUSIBLE_DELTA) 0L else rawDelta
 
-                val newTotal = (today.steps + delta).coerceIn(0L, MAX_STEPS_PER_DAY)
+                val newTotal = (storedSteps + delta).coerceIn(0L, plausibleMaxNow)
                 repository.updateSteps(newTotal, rawTotal)
             }
         }
@@ -112,7 +123,10 @@ class StepCounterManager(
         /** Больше этого за одно событие датчика — заведомо не шаги, а рассинхрон. */
         private const val MAX_PLAUSIBLE_DELTA = 2_000L
 
-        /** Верхняя граница здравого смысла: мировой рекорд суточной ходьбы меньше. */
+        /** Быстрый бег — порядка 200 шагов в минуту, устойчиво больше человек не выдаёт. */
+        private const val MAX_STEPS_PER_MINUTE = 200L
+
+        /** Верхняя граница здравого смысла на сутки. */
         private const val MAX_STEPS_PER_DAY = 200_000L
     }
 }
