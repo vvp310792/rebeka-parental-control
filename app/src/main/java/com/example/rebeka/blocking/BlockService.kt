@@ -65,6 +65,10 @@ class BlockService : Service() {
     }
 
     private suspend fun checkAndEnforce() {
+        // Разрешение на шаги часто выдают уже после старта сервиса — пробуем
+        // подписаться на датчик на каждой проверке, вызов идемпотентный.
+        stepManager.start()
+
         val usedMillis = usageHelper.usedMillisToday()
         repository.updateUsedMillis(usedMillis)
 

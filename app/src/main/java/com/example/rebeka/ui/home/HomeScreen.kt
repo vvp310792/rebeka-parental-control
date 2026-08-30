@@ -32,6 +32,15 @@ fun HomeScreen(repository: StatsRepository, onOpenParentSettings: () -> Unit = {
     val lifecycleOwner = LocalLifecycleOwner.current
     val usageHelper = remember { UsageStatsHelper(context) }
 
+    val hasStepPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+        context, android.Manifest.permission.ACTIVITY_RECOGNITION
+    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    val hasStepSensor = remember {
+        (context.getSystemService(android.content.Context.SENSOR_SERVICE) as android.hardware.SensorManager)
+            .getDefaultSensor(android.hardware.Sensor.TYPE_STEP_COUNTER) != null
+    }
+
     val today by repository.observeToday().collectAsState(initial = DayStats(epochDay = 0))
     val settings by repository.observeSettings().collectAsState(initial = AppSettings())
 
@@ -150,6 +159,21 @@ fun HomeScreen(repository: StatsRepository, onOpenParentSettings: () -> Unit = {
                     "Окно появится в течение 5 секунд.",
             style = MaterialTheme.typography.bodySmall
         )
+
+        if (!hasStepPermission) {
+            Text(
+                "Нет разрешения на учёт шагов — бонусное время не начисляется.",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        } else if (!hasStepSensor) {
+            Text(
+                "На этом телефоне нет аппаратного счётчика шагов — бонусы за шаги " +
+                    "работать не будут.",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
 
         if (!AdminUtils.isAdminActive(context)) {
             Card(Modifier.fillMaxWidth()) {
