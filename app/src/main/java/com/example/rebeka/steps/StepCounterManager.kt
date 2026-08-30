@@ -7,7 +7,6 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.example.rebeka.data.StatsRepository
 import kotlinx.coroutines.CoroutineScope
@@ -17,8 +16,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
-import java.time.LocalTime
-import java.time.ZoneId
 
 /**
  * Считает шаги С НАЧАЛА СУТОК, а не с момента запуска приложения.
@@ -92,64 +89,76 @@ class StepCounterManager(
     }
 
     private suspend fun handleReading(rawTotal: Long) {
+        purgeCorruptedDataOnce()
+
         val today = LocalDate.now().toEpochDay()
         val storedRaw = prefs.getLong(KEY_LAST_RAW, NO_VALUE)
         val storedDay = prefs.getLong(KEY_LAST_DAY, NO_VALUE)
         val dayStats = repository.getToday()
 
+        // Показание датчика НИКОГДА не используется как абсолютное число шагов.
+        //
+        // Раньше здесь была попытка «восстановить» шаги за сегодня, засчитав всё
+        // накопленное датчиком, если телефон загружался после полуночи. Это
+        // опиралось на предположение, что счётчик обнуляется при перезагрузке.
+        // На части устройств (в частности, Xiaomi) он этого не делает и копит
+        // шаги за всё время жизни телефона — и в счётчик за день попадали сотни
+        // тысяч шагов за месяцы. Абсолютное значение датчика ничего не говорит
+        // о сегодняшнем дне, поэтому работаем только с приростами.
         val stepsToday: Long = when {
-            // Нет сохранённого показания: первый запуск, переустановка, очистка данных.
-            storedRaw == NO_VALUE -> recoverStepsSinceMidnight(rawTotal)
+            // Нет сохранённого показания: первый запуск, переустановка, сброс.
+            // Прирост считать не от чего — просто запоминаем точку отсчёта.
+            // Шаги, сделанные до этого момента, восстановить неоткуда: датчик
+            // не хранит историю, а его абсолютному значению доверять нельзя.
+            storedRaw == NO_VALUE -> dayStats.steps
 
-            // Тот же день — продолжаем накапливать.
-            storedDay == today -> {
-                val delta = if (rawTotal >= storedRaw) rawTotal - storedRaw else rawTotal
-                dayStats.steps + delta
-            }
+            // Тот же день — накапливаем.
+            storedDay == today -> dayStats.steps + plausibleDelta(rawTotal, storedRaw)
 
-            // Наступили новые сутки. Точкой отсчёта берём последнее показание
-            // прошлого дня: всё, что датчик накрутил после него, пройдено уже
-            // сегодня. Именно так шаги между полуночью и первым событием дня
-            // перестают теряться.
-            else -> if (rawTotal >= storedRaw) rawTotal - storedRaw else rawTotal
+            // Новые сутки: точка отсчёта — последнее показание прошлого дня.
+            else -> plausibleDelta(rawTotal, storedRaw)
         }
-
-        val sane = stepsToday.coerceIn(0L, plausibleMaxForNow())
 
         prefs.edit()
             .putLong(KEY_LAST_RAW, rawTotal)
             .putLong(KEY_LAST_DAY, today)
             .apply()
 
-        repository.updateSteps(sane, rawTotal)
+        repository.updateSteps(stepsToday.coerceAtLeast(0L), rawTotal)
     }
 
     /**
-     * Восстановление после переустановки или очистки данных.
+     * Прирост между двумя показаниями.
      *
-     * Датчик считает с момента загрузки телефона. Если телефон загружался уже
-     * после полуночи, то все накопленные им шаги сделаны сегодня — их можно
-     * засчитать целиком. Если загрузка была вчера или раньше, узнать долю за
-     * сегодня неоткуда, и счёт начинается с нуля.
+     * Все спорные случаи трактуются в пользу занижения: лучше не досчитать
+     * несколько шагов, чем начислить ребёнку лишние часы экранного времени.
+     *
+     * - показание уменьшилось (сброс счётчика после перезагрузки) — прирост не
+     *   засчитываем, просто пересинхронизируемся;
+     * - прирост неправдоподобно большой (рассинхрон, смена прошивки, подмена
+     *   датчика) — тоже не засчитываем.
      */
-    private fun recoverStepsSinceMidnight(rawTotal: Long): Long {
-        val bootTimeMillis = System.currentTimeMillis() - SystemClock.elapsedRealtime()
-        val startOfDayMillis = LocalDate.now()
-            .atStartOfDay(ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
-
-        return if (bootTimeMillis >= startOfDayMillis) rawTotal else 0L
+    private fun plausibleDelta(rawTotal: Long, storedRaw: Long): Long {
+        if (rawTotal < storedRaw) return 0
+        val delta = rawTotal - storedRaw
+        return if (delta > MAX_PLAUSIBLE_DELTA) 0 else delta
     }
 
     /**
-     * Потолок здравого смысла, растущий в течение дня: быстрый бег даёт около
-     * 200 шагов в минуту, устойчиво больше человек не выдаёт. Защищает от мусора
-     * в показаниях, но, в отличие от прошлой версии, не обнуляет накопленное.
+     * Одноразовая чистка. Версии до этой могли записать в счётчик за день сырое
+     * показание датчика — сотни тысяч шагов за всё время жизни телефона. Такие
+     * данные надо стереть, иначе они останутся в базе навсегда: новый расчёт
+     * работает только с приростами и сам их не исправит.
      */
-    private fun plausibleMaxForNow(): Long {
-        val minutesSinceMidnight = LocalTime.now().toSecondOfDay() / 60L
-        return (minutesSinceMidnight * MAX_STEPS_PER_MINUTE).coerceIn(1_000L, MAX_STEPS_PER_DAY)
+    private suspend fun purgeCorruptedDataOnce() {
+        if (prefs.getBoolean(KEY_PURGED, false)) return
+
+        repository.resetTodaySteps()
+        prefs.edit()
+            .remove(KEY_LAST_RAW)
+            .remove(KEY_LAST_DAY)
+            .putBoolean(KEY_PURGED, true)
+            .apply()
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
@@ -158,9 +167,10 @@ class StepCounterManager(
         private const val PREFS_NAME = "step_counter"
         private const val KEY_LAST_RAW = "last_raw_sensor_value"
         private const val KEY_LAST_DAY = "last_raw_epoch_day"
+        private const val KEY_PURGED = "corrupted_data_purged_v2"
         private const val NO_VALUE = -1L
 
-        private const val MAX_STEPS_PER_MINUTE = 200L
-        private const val MAX_STEPS_PER_DAY = 200_000L
+        /** Больше этого за одно событие датчика — заведомо не шаги, а рассинхрон. */
+        private const val MAX_PLAUSIBLE_DELTA = 2_000L
     }
 }
