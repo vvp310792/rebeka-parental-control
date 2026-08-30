@@ -7,6 +7,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.example.rebeka.data.StatsRepository
 import kotlinx.coroutines.CoroutineScope
@@ -15,22 +16,24 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 
 /**
- * TYPE_STEP_COUNTER отдаёт число шагов, накопленное с момента последней ЗАГРУЗКИ
- * телефона, а не за сегодня.
+ * Считает шаги С НАЧАЛА СУТОК, а не с момента запуска приложения.
  *
- * Первая версия вычитала фиксированную точку отсчёта: шаги = текущее - точка.
- * После перезагрузки датчик начинает с нуля, разница уходит в минус, а
- * coerceAtLeast(0) превращал это в ноль — счётчик залипал до конца суток.
+ * Датчик TYPE_STEP_COUNTER не хранит историю: он отдаёт только суммарное число
+ * шагов с момента последней ЗАГРУЗКИ телефона. Поэтому «сколько пройдено сегодня»
+ * приходится вычислять самим, и для этого нужно помнить показание датчика между
+ * сутками и между запусками приложения.
  *
- * Теперь считаем накопительно по дельтам: храним последнее показание датчика и
- * прибавляем прирост. Если новое показание меньше предыдущего — это перезагрузка,
- * и прирост равен самому показанию.
+ * Ровно этого и не хватало раньше: показание хранилось только внутри записи за
+ * текущий день, и при смене суток, обновлении приложения или сбросе точка отсчёта
+ * терялась — счёт начинался с текущего момента, а пройденное с полуночи пропадало.
  *
- * Поле stepsBaselineAtMidnight переиспользуется под «последнее показание датчика»,
- * поэтому схема БД не меняется и миграция не нужна.
+ * Теперь показание датчика живёт в SharedPreferences отдельно от дневной
+ * статистики и переживает и полночь, и перезапуск процесса.
  */
 class StepCounterManager(
     private val appContext: Context,
@@ -41,6 +44,8 @@ class StepCounterManager(
     private val stepSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val writeMutex = Mutex()
+
+    private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     @Volatile
     private var registered = false
@@ -60,11 +65,13 @@ class StepCounterManager(
         if (registered || !hasPermission()) return
         val sensor = stepSensor ?: return
 
+        // При подписке система сразу присылает текущее показание счётчика —
+        // отдельный запрос «сколько сейчас» не нужен.
         registered = sensorManager.registerListener(
             this,
             sensor,
             SensorManager.SENSOR_DELAY_NORMAL,
-            0 // maxReportLatency = 0: без батчинга, события приходят сразу
+            0
         )
     }
 
@@ -77,56 +84,83 @@ class StepCounterManager(
     override fun onSensorChanged(event: SensorEvent) {
         val rawTotal = event.values.firstOrNull()?.toLong() ?: return
 
-        // runBlocking в колбэке датчика блокировал бы поток сенсоров — пишем асинхронно.
-        // Mutex сериализует записи: события приходят пачками, и без него две корутины
-        // читают одно и то же значение и одна перетирает другую.
+        // Mutex сериализует записи: события приходят пачками, и без него две
+        // корутины прочитали бы одно значение и перетёрли друг друга.
         scope.launch {
-            writeMutex.withLock {
-                val today = repository.getToday()
-
-                // Самовосстановление. Значение в базе могло испортиться: переход
-                // между версиями, сбой записи, рассинхрон с датчиком. Проверяем,
-                // возможно ли столько шагов за время, прошедшее с начала суток:
-                // быстрый бег — около 200 шагов в минуту, больше человек не сделает.
-                // Если накопленное неправдоподобно — начинаем счёт заново, не
-                // дожидаясь ручного сброса родителем.
-                val minutesSinceMidnight = LocalTime.now().toSecondOfDay() / 60
-                val plausibleMaxNow = (minutesSinceMidnight * MAX_STEPS_PER_MINUTE)
-                    .coerceAtMost(MAX_STEPS_PER_DAY)
-
-                val storedSteps = if (today.steps > plausibleMaxNow) 0L else today.steps
-                val lastRaw = if (today.steps > plausibleMaxNow) 0L else today.stepsBaselineAtMidnight
-
-                val rawDelta = when {
-                    // Первое показание за сегодня: прироста ещё нет, только фиксируем точку.
-                    lastRaw == 0L -> 0L
-                    // Обычный случай.
-                    rawTotal >= lastRaw -> rawTotal - lastRaw
-                    // Показание упало — телефон перезагружался, датчик начал с нуля.
-                    else -> rawTotal
-                }
-
-                // Прирост между двумя событиями датчика, приходящими раз в несколько
-                // секунд, не может быть большим. Огромная дельта означает рассинхрон:
-                // прирост не засчитываем, просто пересинхронизируемся на текущее показание.
-                val delta = if (rawDelta > MAX_PLAUSIBLE_DELTA) 0L else rawDelta
-
-                val newTotal = (storedSteps + delta).coerceIn(0L, plausibleMaxNow)
-                repository.updateSteps(newTotal, rawTotal)
-            }
+            writeMutex.withLock { handleReading(rawTotal) }
         }
+    }
+
+    private suspend fun handleReading(rawTotal: Long) {
+        val today = LocalDate.now().toEpochDay()
+        val storedRaw = prefs.getLong(KEY_LAST_RAW, NO_VALUE)
+        val storedDay = prefs.getLong(KEY_LAST_DAY, NO_VALUE)
+        val dayStats = repository.getToday()
+
+        val stepsToday: Long = when {
+            // Нет сохранённого показания: первый запуск, переустановка, очистка данных.
+            storedRaw == NO_VALUE -> recoverStepsSinceMidnight(rawTotal)
+
+            // Тот же день — продолжаем накапливать.
+            storedDay == today -> {
+                val delta = if (rawTotal >= storedRaw) rawTotal - storedRaw else rawTotal
+                dayStats.steps + delta
+            }
+
+            // Наступили новые сутки. Точкой отсчёта берём последнее показание
+            // прошлого дня: всё, что датчик накрутил после него, пройдено уже
+            // сегодня. Именно так шаги между полуночью и первым событием дня
+            // перестают теряться.
+            else -> if (rawTotal >= storedRaw) rawTotal - storedRaw else rawTotal
+        }
+
+        val sane = stepsToday.coerceIn(0L, plausibleMaxForNow())
+
+        prefs.edit()
+            .putLong(KEY_LAST_RAW, rawTotal)
+            .putLong(KEY_LAST_DAY, today)
+            .apply()
+
+        repository.updateSteps(sane, rawTotal)
+    }
+
+    /**
+     * Восстановление после переустановки или очистки данных.
+     *
+     * Датчик считает с момента загрузки телефона. Если телефон загружался уже
+     * после полуночи, то все накопленные им шаги сделаны сегодня — их можно
+     * засчитать целиком. Если загрузка была вчера или раньше, узнать долю за
+     * сегодня неоткуда, и счёт начинается с нуля.
+     */
+    private fun recoverStepsSinceMidnight(rawTotal: Long): Long {
+        val bootTimeMillis = System.currentTimeMillis() - SystemClock.elapsedRealtime()
+        val startOfDayMillis = LocalDate.now()
+            .atStartOfDay(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+
+        return if (bootTimeMillis >= startOfDayMillis) rawTotal else 0L
+    }
+
+    /**
+     * Потолок здравого смысла, растущий в течение дня: быстрый бег даёт около
+     * 200 шагов в минуту, устойчиво больше человек не выдаёт. Защищает от мусора
+     * в показаниях, но, в отличие от прошлой версии, не обнуляет накопленное.
+     */
+    private fun plausibleMaxForNow(): Long {
+        val minutesSinceMidnight = LocalTime.now().toSecondOfDay() / 60L
+        return (minutesSinceMidnight * MAX_STEPS_PER_MINUTE).coerceIn(1_000L, MAX_STEPS_PER_DAY)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     companion object {
-        /** Больше этого за одно событие датчика — заведомо не шаги, а рассинхрон. */
-        private const val MAX_PLAUSIBLE_DELTA = 2_000L
+        private const val PREFS_NAME = "step_counter"
+        private const val KEY_LAST_RAW = "last_raw_sensor_value"
+        private const val KEY_LAST_DAY = "last_raw_epoch_day"
+        private const val NO_VALUE = -1L
 
-        /** Быстрый бег — порядка 200 шагов в минуту, устойчиво больше человек не выдаёт. */
         private const val MAX_STEPS_PER_MINUTE = 200L
-
-        /** Верхняя граница здравого смысла на сутки. */
         private const val MAX_STEPS_PER_DAY = 200_000L
     }
 }

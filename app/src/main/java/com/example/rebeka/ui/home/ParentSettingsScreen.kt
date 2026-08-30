@@ -79,6 +79,7 @@ private fun PinGate(repository: StatsRepository, onSuccess: () -> Unit, onCancel
 @Composable
 private fun SettingsForm(repository: StatsRepository, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     var steps by remember { mutableStateOf("") }
     var baseHours by remember { mutableStateOf("") }
@@ -159,6 +160,10 @@ private fun SettingsForm(repository: StatsRepository, onDone: () -> Unit) {
         OutlinedButton(onClick = {
             scope.launch {
                 repository.resetTodaySteps()
+                // Обязательно и сохранённое показание датчика: иначе следующее
+                // событие посчитает прирост от старой точки и вернёт всё назад.
+                context.getSharedPreferences("step_counter", android.content.Context.MODE_PRIVATE)
+                    .edit().clear().apply()
                 stepsReset = true
             }
         }, modifier = Modifier.fillMaxWidth()) {
