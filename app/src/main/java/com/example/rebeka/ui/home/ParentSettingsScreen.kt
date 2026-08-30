@@ -86,6 +86,7 @@ private fun SettingsForm(repository: StatsRepository, onDone: () -> Unit) {
     var saved by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var allowedUninstall by remember { mutableStateOf(false) }
+    var stepsReset by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val s = repository.getSettings()
@@ -154,6 +155,24 @@ private fun SettingsForm(repository: StatsRepository, onDone: () -> Unit) {
             },
             modifier = Modifier.fillMaxWidth()
         ) { Text("Сохранить") }
+
+        OutlinedButton(onClick = {
+            scope.launch {
+                repository.resetTodaySteps()
+                stepsReset = true
+            }
+        }, modifier = Modifier.fillMaxWidth()) {
+            Text("Сбросить шаги за сегодня")
+        }
+
+        if (stepsReset) {
+            Text(
+                "Шаги за сегодня обнулены. Счёт начнётся заново со следующего " +
+                    "показания датчика.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
 
         Button(onClick = {
             com.example.rebeka.blocking.BlockState.allowUninstall(minutes = 5)

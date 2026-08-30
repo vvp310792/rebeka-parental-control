@@ -38,6 +38,12 @@ class StatsRepository(
         if (current.blocked != blocked) dayStatsDao.upsert(current.copy(blocked = blocked))
     }
 
+    /** Сброс шагов за сегодня: и счётчик, и точка синхронизации с датчиком. */
+    suspend fun resetTodaySteps() {
+        val current = getToday()
+        dayStatsDao.upsert(current.copy(steps = 0, stepsBaselineAtMidnight = 0))
+    }
+
     fun observeSettings(): Flow<AppSettings> =
         settingsDao.observe().map { it ?: AppSettings() }
 

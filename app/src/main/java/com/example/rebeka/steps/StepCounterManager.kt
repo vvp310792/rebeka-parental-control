@@ -13,6 +13,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * TYPE_STEP_COUNTER отдаёт число шагов, накопленное с момента последней ЗАГРУЗКИ
@@ -37,6 +39,7 @@ class StepCounterManager(
     private val sensorManager = appContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val stepSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val writeMutex = Mutex()
 
     @Volatile
     private var registered = false
@@ -74,22 +77,42 @@ class StepCounterManager(
         val rawTotal = event.values.firstOrNull()?.toLong() ?: return
 
         // runBlocking в колбэке датчика блокировал бы поток сенсоров — пишем асинхронно.
+        // Mutex сериализует записи: события приходят пачками, и без него две корутины
+        // читают одно и то же значение и одна перетирает другую.
         scope.launch {
-            val today = repository.getToday()
-            val lastRaw = today.stepsBaselineAtMidnight
+            writeMutex.withLock {
+                val today = repository.getToday()
+                val lastRaw = today.stepsBaselineAtMidnight
 
-            val delta = when {
-                // Первое показание за сегодня: прироста ещё нет, только фиксируем точку.
-                lastRaw == 0L -> 0L
-                // Обычный случай.
-                rawTotal >= lastRaw -> rawTotal - lastRaw
-                // Показание упало — телефон перезагружался, датчик начал заново с нуля.
-                else -> rawTotal
+                val rawDelta = when {
+                    // Первое показание за сегодня: прироста ещё нет, только фиксируем точку.
+                    lastRaw == 0L -> 0L
+                    // Обычный случай.
+                    rawTotal >= lastRaw -> rawTotal - lastRaw
+                    // Показание упало — телефон перезагружался, датчик начал с нуля.
+                    else -> rawTotal
+                }
+
+                // Санитарная проверка. Человек не делает тысячи шагов между двумя
+                // событиями датчика, приходящими раз в несколько секунд. Огромная
+                // дельта означает рассинхрон: в поле «последнее показание» лежит
+                // мусор от прошлой версии или после сбоя. В этом случае прирост не
+                // засчитываем, а просто пересинхронизируемся на текущее показание.
+                val delta = if (rawDelta > MAX_PLAUSIBLE_DELTA) 0L else rawDelta
+
+                val newTotal = (today.steps + delta).coerceIn(0L, MAX_STEPS_PER_DAY)
+                repository.updateSteps(newTotal, rawTotal)
             }
-
-            repository.updateSteps(today.steps + delta, rawTotal)
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+    companion object {
+        /** Больше этого за одно событие датчика — заведомо не шаги, а рассинхрон. */
+        private const val MAX_PLAUSIBLE_DELTA = 2_000L
+
+        /** Верхняя граница здравого смысла: мировой рекорд суточной ходьбы меньше. */
+        private const val MAX_STEPS_PER_DAY = 200_000L
+    }
 }
