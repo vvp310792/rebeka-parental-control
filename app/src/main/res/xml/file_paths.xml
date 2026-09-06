@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Путь, который FileProvider разрешает раздавать наружу через content://.
+     Совпадает с тем, куда UpdateManager.download() кладёт скачанный APK. -->
+<paths>
+    <external-files-path name="updates" path="updates/" />
+</paths>
