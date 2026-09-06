@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import com.example.rebeka.data.AppDatabase
+import com.example.rebeka.update.UpdateWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -20,6 +21,9 @@ class RebekaApp : Application() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannels()
+        // Не привязана к какому-то экрану — переживает и блокировку, и сворачивание
+        // приложения, и перезагрузку (подробнее в update/UpdateWorker.kt).
+        UpdateWorker.schedule(this)
     }
 
     fun launchPersistent(block: suspend () -> Unit) {
@@ -41,10 +45,17 @@ class RebekaApp : Application() {
                 NotificationManager.IMPORTANCE_HIGH
             )
         )
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_UPDATE, "Обновления приложения",
+                NotificationManager.IMPORTANCE_DEFAULT
+            )
+        )
     }
 
     companion object {
         const val CHANNEL_TRACKING = "tracking"
         const val CHANNEL_PARENT_ALERT = "parent_alert"
+        const val CHANNEL_UPDATE = "app_update"
     }
 }

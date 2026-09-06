@@ -5,6 +5,22 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+/**
+ * SHA текущего коммита для BuildConfig.GIT_SHA (проверка обновлений,
+ * update/UpdateManager.kt). Считается один раз здесь — top-level `fun` в
+ * build.gradle.kts не имеет неявного Project-получателя, которым пользуется
+ * `providers`, а top-level `val` его подхватывает и виден из defaultConfig{}
+ * как обычное замыкание. "unknown" на раннерах без .git не ломает сборку —
+ * просто отключает автосравнение.
+ */
+val gitSha: String = try {
+    providers.exec {
+        commandLine("git", "rev-parse", "HEAD")
+    }.standardOutput.asText.get().trim()
+} catch (e: Exception) {
+    "unknown"
+}
+
 android {
     namespace = "com.example.rebeka"
     compileSdk = 35
@@ -15,6 +31,12 @@ android {
         targetSdk = 35
         versionCode = 16
         versionName = "2.5"
+
+        // Коммит, из которого собран этот APK — сравнивается с target_commitish
+        // релиза "latest-debug" в update/UpdateManager.kt, чтобы понять, вышла ли
+        // новая сборка. Собирается CI на каждый push в main (.github/workflows/build.yml),
+        // поэтому versionCode/versionName на это не полагаются, они меняются вручную.
+        buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
     }
 
     buildFeatures {

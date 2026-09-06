@@ -12,7 +12,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.rebeka.admin.AdminUtils
 import com.example.rebeka.data.StatsRepository
+import com.example.rebeka.update.UpdateManager
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * Родительские настройки. Закрыты PIN-ом: без этого ребёнок просто выставил бы
@@ -88,6 +90,12 @@ private fun SettingsForm(repository: StatsRepository, onDone: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var allowedUninstall by remember { mutableStateOf(false) }
     var stepsReset by remember { mutableStateOf(false) }
+
+    var updateChecking by remember { mutableStateOf(false) }
+    var updateResult by remember { mutableStateOf<UpdateManager.CheckResult?>(null) }
+    var updateDownloading by remember { mutableStateOf(false) }
+    var downloadedApk by remember { mutableStateOf<File?>(null) }
+    var updateError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         val s = repository.getSettings()
@@ -194,6 +202,85 @@ private fun SettingsForm(repository: StatsRepository, onDone: () -> Unit) {
                 color = MaterialTheme.colorScheme.error
             )
         }
+
+        HorizontalDivider()
+
+        Text("Обновление приложения", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Приложение не из Google Play и само себя не обновляет — фоновая " +
+                "проверка идёт каждые 6 часов и работает в любом режиме, включая " +
+                "заблокированный экран, а кнопкой ниже можно проверить прямо сейчас.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            "Текущая сборка: ${UpdateManager.currentSha().take(8)}",
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        Button(
+            onClick = {
+                updateChecking = true
+                updateError = null
+                downloadedApk = null
+                scope.launch {
+                    updateResult = UpdateManager.check()
+                    updateChecking = false
+                }
+            },
+            enabled = !updateChecking && !updateDownloading,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(if (updateChecking) "Проверка…" else "Проверить обновления") }
+
+        when (val result = updateResult) {
+            is UpdateManager.CheckResult.UpToDate ->
+                Text("Установлена последняя версия", color = MaterialTheme.colorScheme.primary)
+
+            is UpdateManager.CheckResult.Error ->
+                Text("Не удалось проверить: ${result.message}", color = MaterialTheme.colorScheme.error)
+
+            is UpdateManager.CheckResult.Available -> {
+                Text(
+                    "Доступно обновление: ${result.info.releaseName}",
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                val apk = downloadedApk
+                if (apk == null) {
+                    Button(
+                        onClick = {
+                            updateDownloading = true
+                            updateError = null
+                            scope.launch {
+                                try {
+                                    downloadedApk = UpdateManager.download(context, result.info)
+                                } catch (e: Exception) {
+                                    updateError = e.message ?: e.javaClass.simpleName
+                                }
+                                updateDownloading = false
+                            }
+                        },
+                        enabled = !updateDownloading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (updateDownloading) "Загрузка…" else "Скачать обновление") }
+                } else {
+                    Button(
+                        onClick = {
+                            val intent = if (UpdateManager.canRequestInstall(context)) {
+                                UpdateManager.installIntent(context, apk)
+                            } else {
+                                UpdateManager.requestInstallPermissionIntent(context)
+                            }
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Установить") }
+                }
+            }
+
+            null -> {}
+        }
+
+        updateError?.let { Text("Ошибка: $it", color = MaterialTheme.colorScheme.error) }
 
         TextButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Готово") }
     }
