@@ -4,43 +4,69 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Голова -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M56,26 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z" />
+    <!-- Ходящий ребёнок: пиктограмма из простых обводок с круглыми концами
+         вместо кривых bezier-заплаток — на маленьком размере значка это
+         читается ровнее и не "плывёт". -->
 
-    <!-- Корпус: слегка наклонён вперёд, как при ходьбе -->
+    <!-- Голова: намеренно крупнее, чем у взрослого — у ребёнка голова
+         занимает бОльшую долю роста, это и читается как "ребёнок", а не
+         обобщённый пешеход -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M54,39 C58,39 61,42 61,46 L63,60 C63,63 61,65 58,65 L52,65 C49,65 47,63 47,60 L49,46 C49,42 50,39 54,39 Z" />
+        android:pathData="M54,26 m-11,0 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0 Z" />
 
-    <!-- Рука вперёд -->
+    <!-- Корпус: небольшой наклон вперёд, как на шаге -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M60,44 C62,43 64,44 65,46 L72,57 C73,59 72,62 70,63 C68,64 65,63 64,61 L58,50 C57,48 58,45 60,44 Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="11"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M54,38 L51,58" />
 
-    <!-- Рука назад -->
+    <!-- Рука, уходящая назад -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M48,44 C46,43 43,44 42,46 L36,56 C35,58 36,61 38,62 C40,63 43,62 44,60 L49,50 C50,48 50,45 48,44 Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M52,44 L64,49 L74,43" />
 
-    <!-- Нога вперёд, согнута в колене -->
+    <!-- Рука, уходящая вперёд -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M57,64 C60,64 62,66 62,69 L64,80 L72,88 C74,90 74,93 72,95 C70,97 67,97 65,95 L55,85 C54,84 53,82 53,80 L52,69 C52,66 54,64 57,64 Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M52,44 L40,39 L30,45" />
 
-    <!-- Нога назад -->
+    <!-- Нога впереди, согнута в колене -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M50,64 C53,64 55,66 55,69 L54,80 L44,90 C42,92 39,92 37,90 C35,88 35,85 37,83 L45,75 L45,69 C45,66 47,64 50,64 Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M51,58 L60,70 L62,88" />
 
-    <!-- След под шагающей ногой: смысл приложения — шаги -->
+    <!-- Нога сзади, вытянута назад -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M51,58 L42,74 L34,86" />
+
+    <!-- Следы под задней ногой: смысл приложения — шаги -->
     <path
         android:fillColor="#FFFFFF"
-        android:fillAlpha="0.55"
-        android:pathData="M26,96 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z" />
+        android:fillAlpha="0.5"
+        android:pathData="M23,93 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0 Z" />
     <path
         android:fillColor="#FFFFFF"
-        android:fillAlpha="0.35"
-        android:pathData="M15,90 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0 Z" />
+        android:fillAlpha="0.3"
+        android:pathData="M14,85 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 Z" />
 </vector>
