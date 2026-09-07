@@ -4,7 +4,7 @@
         Не даёт обойти блокировку экранного времени и предупреждает родителя
         о попытках отключить приложение.
     </string>
-    <!-- --mg-accent-hover из брендбука MyGenetics: сам --mg-accent (#32CC00) на
+    <!-- Токен mg-accent-hover из брендбука MyGenetics: сам mg-accent (#32CC00) на
          значке даёт белой пиктограмме контраст ~2.1:1 (ниже WCAG), этот тон — ~3.3:1. -->
     <color name="ic_launcher_background">#28A300</color>
 </resources>
