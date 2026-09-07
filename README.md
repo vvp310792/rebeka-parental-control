@@ -38,7 +38,9 @@ blocking/        # BlockService (foreground) + оверлей блокировк
 notifications/   # ParentAlertNotifier — стаб отправки уведомления родителю
 update/          # UpdateManager + UpdateWorker — проверка/установка обновлений
 util/            # TimeLimitCalculator — лимит = 2ч + (шаги/5000)ч
-ui/home/         # Compose-экран: шаги, оставшееся время, статус блокировки
+ui/home/         # Compose-экраны: шаги, оставшееся время, статус блокировки
+ui/theme/        # RebekaTheme — фирменный стиль MyGenetics (Color.kt + Theme.kt),
+                 #   единственное место с цветами; экраны берут всё из MaterialTheme
 navigation/      # Routes + NavHost
 ```
 

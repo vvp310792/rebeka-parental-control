@@ -11,7 +11,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +31,7 @@ import com.example.rebeka.ui.home.HomeScreen
 import com.example.rebeka.ui.home.OnboardingScreen
 import com.example.rebeka.ui.home.ParentSettingsScreen
 import com.example.rebeka.ui.home.PinSetupScreen
+import com.example.rebeka.ui.theme.RebekaTheme
 import com.example.rebeka.usage.UsageStatsHelper
 
 class MainActivity : ComponentActivity() {
@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
         val repository = StatsRepository(app.database.dayStatsDao(), app.database.appSettingsDao())
 
         setContent {
-            MaterialTheme {
+            RebekaTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     RebekaNavHost(repository)
                 }
